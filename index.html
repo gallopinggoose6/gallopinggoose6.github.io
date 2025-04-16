@@ -635,8 +635,9 @@ function webGLStart()
    canvas.ontouchstart = function (ev)
    {
       move = 1;
-      x0 = ev.clientX;
-      y0 = ev.clientY;
+      var touch = ev.touches[0];
+      x0 = touch.clientX;
+      y0 = touch.clientY;
    }
 
    //
@@ -668,10 +669,8 @@ function webGLStart()
    }
    canvas.ontouchmove = function (ev)
    {
-      console.log('foo');
       if (move==0) return;
       var touch = ev.touches[0];
-      console.log('bar');
       //  Update angles
       ph -= touch.clientX-x0;
       th += touch.clientY-y0;
@@ -679,7 +678,6 @@ function webGLStart()
       x0 = touch.clientX;
       y0 = touch.clientY;
       //  Redisplay
-      console.log('baz');
       Display();
    }
 
