@@ -436,8 +436,8 @@ function webGLStart()
 	return accum;
    }
    var original_pos = generate_coordinates();
-   console.log(num_ablate_particles);
-   console.log(ablate_times.length);
+   //console.log(num_ablate_particles);
+   //console.log(ablate_times.length);
 
    //  Set state to draw scene
    function regenerate_coordinates() {
@@ -668,8 +668,10 @@ function webGLStart()
    }
    canvas.ontouchmove = function (ev)
    {
+      console.log('foo')
       if (move==0) return;
       var touch = ev.touches[0];
+      console.log('bar')
       //  Update angles
       ph -= touch.clientX-x0;
       th += touch.clientY-y0;
