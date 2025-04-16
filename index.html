@@ -669,12 +669,13 @@ function webGLStart()
    canvas.ontouchmove = function (ev)
    {
       if (move==0) return;
+      var touch = e.touches[0];
       //  Update angles
-      ph -= ev.clientX-x0;
-      th += ev.clientY-y0;
+      ph -= touch..clientX-x0;
+      th += touch..clientY-y0;
       //  Store location
-      x0 = ev.clientX;
-      y0 = ev.clientY;
+      x0 = touch.clientX;
+      y0 = touch.clientY;
       //  Redisplay
       Display();
    }
