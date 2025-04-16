@@ -1,0 +1,676 @@
+<html>
+<head>
+<title>LEONIDS!!!</title>
+<!--
+  Homework 5, code adapted from
+  Willem A. (Vlakkies) Schreuder
+  CSCI 4239/5239 Spring 2025
+  -->
+
+<!--
+  Mat4 class
+  -->
+<script src="mat4.js" type="text/javascript"></script>
+
+<!--
+  Vertex shader
+  -->
+<script id="shader-vs" type="x-shader/x-vertex"> 
+   precision highp float;
+   attribute vec3 XYZ;
+   attribute vec3 RGB;
+   attribute vec2 T2D;
+   attribute vec3 Normal;
+   uniform mat4 ProjectionMatrix;
+   uniform mat4 ModelviewMatrix;
+   varying vec3 col;
+   varying vec2 t2d;
+
+   // https://stackoverflow.com/questions/983999/simple-3x3-matrix-inverse-code-c
+   mat3 inverseandtranspose(mat4 matrix) {
+	mat3 A = mat3(matrix);
+	float det = A[0][0] * (A[1][1]*A[2][2]-A[2][1]*A[1][2]) - A[0][1]*(A[1][0]*A[2][2]-A[1][2]*A[2][0]) + A[0][2]*(A[1][0]*A[2][1]-A[1][1]*A[2][0]);
+
+	float invdet = 1.0/det;
+	mat3 result;
+	result[0][0] =  invdet*(A[1][1]*A[2][2]-A[2][1]*A[1][2]);
+	result[1][0] = -invdet*(A[0][1]*A[2][2]-A[0][2]*A[2][1]);
+	result[2][0] =  invdet*(A[0][1]*A[1][2]-A[0][2]*A[1][1]);
+	result[0][1] = -invdet*(A[1][0]*A[2][2]-A[1][2]*A[2][0]);
+	result[1][1] =  invdet*(A[0][0]*A[2][2]-A[0][2]*A[2][0]);
+	result[2][1] = -invdet*(A[0][0]*A[1][2]-A[1][0]*A[0][2]);
+	result[0][2] =  invdet*(A[1][0]*A[2][1]-A[2][0]*A[1][1]);
+	result[1][2] = -invdet*(A[0][0]*A[2][1]-A[2][0]*A[0][1]);
+	result[2][2] =  invdet*(A[0][0]*A[1][1]-A[1][0]*A[0][1]);
+	return result;
+   }
+
+   vec4 phong()
+   {
+	mat3 NormalMatrix = inverseandtranspose(ModelviewMatrix);
+
+	vec3 P = vec3(mat3(ModelviewMatrix) * XYZ);
+	vec3 N = normalize(NormalMatrix * Normal);
+	vec3 LightPos = vec3(1, 1, 1); // hard coded for now
+	vec3 L = normalize(LightPos - P);
+	vec3 R = reflect(-L, N);
+	vec3 V = normalize(-P);
+
+	float Id = max(dot(L, N), 0.0);
+	float Is = (Id > 0.0) ? max(dot(R, V), 0.0) : 0.0; // Hardcoded shininess
+
+	// Emission color, ambient, diffuse, specular (ignore global ambient)
+	return vec4(0, 0, 0, 1) + vec4(0.3, 0.3, 0.3, 1) + Id * vec4(0.5, 0.5, 0.5, 1) + Is * vec4(0.8, 0.8, 0.8, 1);
+   }
+
+   void main(void)
+   {
+      col = RGB * vec3(phong());
+      t2d = T2D;
+      gl_Position = ProjectionMatrix * ModelviewMatrix * vec4(XYZ,1);
+   }
+</script> 
+ 
+<!--
+  Fragment shader
+  -->
+<script id="shader-fs" type="x-shader/x-fragment"> 
+precision highp float;
+varying vec3 col;
+varying vec2 t2d;
+uniform sampler2D tex;
+void main(void)
+{
+   if (t2d.x == t2d.y) {
+        gl_FragColor = vec4(col,1);
+   }
+   else {
+   	gl_FragColor = vec4(col,1)*texture2D(tex,t2d);
+   }
+
+   if (gl_FragColor.a < 0.1) discard;
+}
+</script> 
+
+<script id="point-vs" type="x-shader/x-vertex">
+	precision highp float;
+	attribute vec3 coordinates;
+	uniform mat4 ProjectionMatrix;
+	uniform mat4 ModelviewMatrix;
+
+	void main(void) {
+		gl_Position = ProjectionMatrix * ModelviewMatrix * vec4(coordinates, 1.0);
+		gl_PointSize = 10.0;
+	}
+</script>
+
+<script id="ablate-vs" type="x-shader/x-vertex">
+	precision highp float;
+	attribute vec3 coordinates;
+   	attribute vec2 T2D;
+	attribute vec3 position;
+	uniform mat4 ProjectionMatrix;
+	uniform mat4 ModelviewMatrix;
+	varying vec2 t2d;
+	varying float x_pos;
+
+	void main(void) {
+		vec3 coord = coordinates + position;
+		gl_Position = ProjectionMatrix * ModelviewMatrix * vec4(coord, 1.0);
+		gl_PointSize = 10.0;
+		t2d = T2D;
+		x_pos = coord.x;
+	}
+</script>
+
+<script id="point-fs" type="x-shader/x-fragment">
+	void main(void) {
+		gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+	}
+</script>
+
+<script id="ablate-fs" type="x-shader/x-fragment">
+	precision highp float;
+	varying vec2 t2d;
+	varying float x_pos;
+	uniform sampler2D tex;
+	void main(void) {
+	        if (x_pos > -0.1) discard;
+		gl_FragColor = texture2D(tex, t2d);
+	}
+</script>
+
+<!--
+  WebGL program
+  -->
+<script type="text/javascript"> 
+
+//
+//  Compile a shader
+//
+function CompileShader(gl,id)
+{
+   //  Get shader by id
+   var src = document.getElementById(id);
+   //  Create shader based on type setting
+   var shader;
+   if (src.type == "x-shader/x-fragment")
+      shader = gl.createShader(gl.FRAGMENT_SHADER);
+   else if (src.type == "x-shader/x-vertex")
+      shader = gl.createShader(gl.VERTEX_SHADER);
+   else
+      return null;
+   //  Read source into str
+   var str = "";
+   var k = src.firstChild;
+   while (k)
+   {
+      if (k.nodeType == 3) str += k.textContent;
+      k = k.nextSibling;
+   }
+   gl.shaderSource(shader, str);
+   //  Compile the shader
+   gl.compileShader(shader);
+   //  Check for errors
+   if (gl.getShaderParameter(shader, gl.COMPILE_STATUS) == 0)
+      alert(gl.getShaderInfoLog(shader));
+   //  Return shader
+   return shader;
+}
+
+//
+//  Compile shader program
+//
+function CompileShaderProg(gl,vert,frag)
+{
+   //  Compile the program
+   var prog  = gl.createProgram();
+   gl.attachShader(prog , CompileShader(gl,vert));
+   gl.attachShader(prog , CompileShader(gl,frag));
+   gl.linkProgram(prog);
+   //  Check for errors
+   if (gl.getProgramParameter(prog, gl.LINK_STATUS) == 0)
+      alert(gl.getProgramInfoLog(prog));
+   //  Return program
+   return prog;
+}
+
+var gl,canvas;
+function webGLStart()
+{
+   //  Set canvas
+   canvas = document.getElementById("canvas");
+   //  Select canvas size
+   var size = Math.min(window.innerWidth,window.innerHeight)-10;
+   canvas.width  = 752; // hard code to match canvas
+   canvas.height = 500;
+   //  Start WebGL
+   if (!window.WebGLRenderingContext)
+   {
+      alert("Your browser does not support WebGL. See http://get.webgl.org");
+      return;
+   }
+   try
+   {
+      gl = canvas.getContext("experimental-webgl");
+   }
+   catch(e)
+   {}
+   if (!gl)
+   {
+      alert("Can't get WebGL");
+      return;
+   }
+
+   //  Set viewport to entire canvas
+   gl.viewport(0,0,752,500);
+
+   const ext = gl.getExtension('ANGLE_instanced_arrays');
+   if (!ext) {
+		   return alert('need ANGLE_instanced_arrays');
+   }
+
+   //  Load Shader
+   var prog  = CompileShaderProg(gl,"shader-vs","shader-fs");
+   // plasma glow
+   var prog2 = CompileShaderProg(gl,"point-vs", "point-fs");
+   // ablation with instancing
+   var prog3 = CompileShaderProg(gl,"ablate-vs", "ablate-fs");
+
+   //  Set program
+   gl.useProgram(prog);
+
+   //  Set projection
+   var ProjectionMatrix = new mat4();
+   ProjectionMatrix.ortho(-1.5,+1.5,-1.5,+1.5,-1.5,+1.5);
+
+   //  Vertex array count
+   var vertex_array_count = 42;
+   //  Cube vertex, color and texture
+   var cube_data = 
+   [
+      -0.15,-0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+      +0.15,-0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+      -0.15,+0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+      -0.15,+0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+      +0.15,-0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+      +0.15,+0.05, 0.05,  0.42,0.42,0.42,   0,0,  0,0,+1,
+
+      +0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+      -0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+      +0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+      +0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+      -0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+      -0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,0,-1,
+
+      +0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+      +0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+      +0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+      +0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+      +0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+      +0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  +1,0,0,
+
+      -0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+      -0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+      -0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+      -0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+      -0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+      -0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  -1,0,0,
+
+      -0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+      +0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+      -0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+      -0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+      +0.15,+0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+      +0.15,+0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,+1,0,
+
+      -0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+      +0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+      -0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+      -0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+      +0.15,-0.05,-0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+      +0.15,-0.05,+0.05,  0.42,0.42,0.42,   0,0,  0,-1,0,
+	
+      -0.151,-1,+0,  1,1,1,   0,1,   -1,0,0,
+      -0.151,-0,+1,  1,1,1,   1,1,   -1,0,0,
+      -0.151,+0,-1,  1,1,1,   0,0,   -1,0,0,
+      -0.151,+0,-1,  1,1,1,   0,0,   -1,0,0,
+      -0.151,-0,+1,  1,1,1,   1,1,   -1,0,0,
+      -0.151,+1,+0,  1,1,1,   1,0,   -1,0,0,
+   ];
+   var cube = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER,cube);
+   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(cube_data),gl.STATIC_DRAW);
+
+   var m = 1;
+   var point_data =
+   [
+      0.4, 0, 0
+   ];
+   var ablate_data =
+   [
+      -0.05,-0.01, 0.01,  0,0.5,
+      +0.05,-0.01, 0.01,  1,0.5,
+      -0.05,+0.01, 0.01,  0,0,
+      -0.05,+0.01, 0.01,  0,0,
+      +0.05,-0.01, 0.01,  1,0.5,
+      +0.05,+0.01, 0.01,  1,0,
+
+      +0.05,-0.01,-0.01,  1,0.5,
+      -0.05,-0.01,-0.01,  0,0.5,
+      +0.05,+0.01,-0.01,  1,0,
+      +0.05,+0.01,-0.01,  1,0,
+      -0.05,-0.01,-0.01,  0,0.5,
+      -0.05,+0.01,-0.01,  0,0,
+
+      +0.05,-0.01,+0.01,  0,0,
+      +0.05,-0.01,-0.01,  0,0,
+      +0.05,+0.01,+0.01,  0,0,
+      +0.05,+0.01,+0.01,  0,0,
+      +0.05,-0.01,-0.01,  0,0,
+      +0.05,+0.01,-0.01,  0,0,
+
+      -0.05,+0.01,+0.01,  0,0.5,
+      +0.05,+0.01,+0.01,  1,0.5,
+      -0.05,+0.01,-0.01,  0,0,
+      -0.05,+0.01,-0.01,  0,0,
+      +0.05,+0.01,+0.01,  1,0.5,
+      +0.05,+0.01,-0.01,  1,0,
+
+      -0.05,-0.01,-0.01,  0,0.5,
+      +0.05,-0.01,-0.01,  1,0.5,
+      -0.05,-0.01,+0.01,  0,0,
+      -0.05,-0.01,+0.01,  0,0,
+      +0.05,-0.01,-0.01,  1,0.5,
+      +0.05,-0.01,+0.01,  1,0,
+   ];
+
+   var current_time = 0;
+   var last_current_time = 0;
+
+   var num_layers = 133;
+   var num_layer_particles = 128;
+   var num_ablate_particles = 0;//num_layers * num_layer_particles;
+
+   var ablate_locs = [];
+   var ablate_times = [];
+
+   var ablatepos = gl.createBuffer();
+
+   function generate_coordinates() {
+	num_ablate_particles = 0;
+	var accum = [];
+	ablate_times = [];
+	var particles_per_side = num_layer_particles / 4;
+	var x = -2;
+	for (var k = 0; k < num_layers; k++) {
+		var z = 1 / (particles_per_side) - 1;
+		var y = z + 1;
+		for (var j = 0; j < particles_per_side * 2; j++) {
+			var randarray  = new Uint8Array(5);
+			var randarray1 = new Uint8Array(5);
+			var randarray2 = new Uint8Array(5);
+			var randarray3 = new Uint8Array(5);
+			self.crypto.getRandomValues(randarray);
+			self.crypto.getRandomValues(randarray1);
+			self.crypto.getRandomValues(randarray2);
+			self.crypto.getRandomValues(randarray3);
+			var xmod = [];
+			var ymod = [];
+			var zmod = [];
+			for (var l = 0; l < 5; l++) {
+				xmod.push((randarray1[l]/256 - 0.5) / 50);
+				ymod.push((randarray2[l]/256 - 0.5) / 50);
+				zmod.push((randarray3[l]/256 - 0.5) / 50);
+			}
+			if (randarray[0] > 51) {	
+				accum.push(x + xmod[0]);
+				accum.push(y + ymod[0]);
+				accum.push(z + zmod[0]);
+				ablate_times.push(-50);
+				num_ablate_particles++;
+			}
+
+			if (randarray[1] > 51) {
+				accum.push(x + xmod[1]);
+				accum.push(-y + ymod[1]);
+				accum.push(z + zmod[1]);
+				ablate_times.push(-50);
+				num_ablate_particles++;
+			}
+
+			if (randarray[2] > 51) {
+				accum.push(x + xmod[2]);
+				accum.push(ymod[2]);
+				accum.push(z + zmod[2]);
+				ablate_times.push(-50);
+				num_ablate_particles++;
+			}
+
+			if (j < particles_per_side) {
+				if (randarray[3] > 51) {
+					accum.push(x + xmod[3]);
+					accum.push(y + ymod[3]);
+					accum.push(zmod[3]);
+					ablate_times.push(-50);
+					num_ablate_particles++;
+				}
+
+				if (randarray[4] > 51) {
+					accum.push(x + xmod[4]);
+					accum.push(-y + ymod[4]);
+					accum.push(zmod[4]);
+					ablate_times.push(-50);
+					num_ablate_particles++;
+				}
+			}
+
+			z += 1 / (particles_per_side + 1);
+			if (j == particles_per_side - 1) z += 1 / (particles_per_side + 1);
+			if (j < particles_per_side - 1) y += 1 / particles_per_side;
+			else if (j > particles_per_side - 1) y -= 1 / particles_per_side;
+		}
+		x += 0.05;
+	}
+	return accum;
+   }
+   var original_pos = generate_coordinates();
+   console.log(num_ablate_particles);
+   console.log(ablate_times.length);
+
+   //  Set state to draw scene
+   function regenerate_coordinates() {
+	var pc = 0;
+	for (var i = 0; i < num_ablate_particles * 3; i += 3) {
+		if (ablate_times[pc] < -30) ablate_times[pc] = current_time;
+		var d0 = original_pos[i];
+		var time_till_alive = d0;// / 2;
+		var time_alive = ablate_times[pc] - time_till_alive;
+		if (time_alive < 0) time_alive = 0;
+		ablate_locs[i] = original_pos[i] - ablate_times[pc];// * 2;
+		if (ablate_locs[i] < -1.5) {
+			ablate_locs[i] += 3;
+			ablate_times[pc] -= 4;
+		}
+		ablate_locs[i + 1] = original_pos[i + 1] * 0.55 + Math.sqrt(Math.sqrt(time_alive * 500)) * 0.15 * original_pos[i + 1];
+		ablate_locs[i + 2] = original_pos[i + 2] * 0.55 + Math.sqrt(Math.sqrt(time_alive * 500)) * 0.15 * original_pos[i + 2];
+		ablate_times[pc] += current_time - last_current_time;
+		pc++;
+	}
+	gl.bindBuffer(gl.ARRAY_BUFFER, ablatepos);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ablate_locs), gl.DYNAMIC_DRAW);
+	last_current_time = current_time;
+   }
+
+   //regenerate_coordinates();
+
+   var points = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, points);
+   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(point_data),gl.STATIC_DRAW);
+
+   var ablate = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, ablate);
+   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ablate_data), gl.STATIC_DRAW);
+
+   gl.enable(gl.DEPTH_TEST);
+   gl.clearColor(0.0,0.0,0.0,0.0);
+   //  Mouse control variables
+   var x0 = y0 = move  = 0;
+   //  Rotation angles
+   var th = ph = 15;
+
+   //  Create and load sail texture
+   var tex = gl.createTexture();
+   var img = new Image();
+   img.src = 'sail.png';
+   img.onload = function()
+   {
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      // When loaded call Display() to refresh the screen
+      Display();
+   }
+   
+   // Create and load reentry texture
+   var tex2 = gl.createTexture();
+   var img2 = new Image();
+   img2.src = 'reentry.png';
+   img2.onload = function()
+   {
+	gl.bindTexture(gl.TEXTURE_2D, tex2);
+	gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img2);
+	gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+	gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+	Display();
+   }
+
+   //  Draw scene the first time
+   Display();
+
+   //
+   //  Display the scene
+   //
+   function Display()
+   {
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      //  Clear the screen and Z buffer
+      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+      // Compute modelview matrix
+      var ModelviewMatrix = new mat4();
+      ModelviewMatrix.rotate(ph,0,1,0);
+      ModelviewMatrix.rotate(th,1,0,0);
+
+      // Set shader
+      gl.useProgram(prog);
+
+      //  Set projection and modelview matrixes
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog,"ProjectionMatrix") , false , ProjectionMatrix.getMat());
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog,"ModelviewMatrix")  , false , ModelviewMatrix.getMat());
+
+      //  Bind cube buffer
+      gl.bindBuffer(gl.ARRAY_BUFFER,cube);
+      //  Set up 3D vertex array
+      var XYZ = gl.getAttribLocation(prog,"XYZ");
+      gl.enableVertexAttribArray(XYZ);
+      gl.vertexAttribPointer(XYZ,3,gl.FLOAT,false,44,0);
+      //  Set up 3D color array
+      var RGB = gl.getAttribLocation(prog,"RGB");
+      gl.enableVertexAttribArray(RGB);
+      gl.vertexAttribPointer(RGB,3,gl.FLOAT,false,44,12);
+      //  Set up 2D texture array
+      var T2D = gl.getAttribLocation(prog,"T2D");
+      gl.enableVertexAttribArray(T2D);
+      gl.vertexAttribPointer(T2D,2,gl.FLOAT,false,44,24);
+      //  Set up Normal array
+      var Normal = gl.getAttribLocation(prog,"Normal");
+      gl.enableVertexAttribArray(Normal);
+      gl.vertexAttribPointer(Normal,3,gl.FLOAT,false,44,32);
+
+      //  Draw all vertexes
+      gl.drawArrays(gl.TRIANGLES,0,vertex_array_count);
+
+      //  Disable vertex arrays
+      gl.disableVertexAttribArray(XYZ);
+      gl.disableVertexAttribArray(RGB);
+      gl.disableVertexAttribArray(T2D);
+      gl.disableVertexAttribArray(Normal);
+
+      gl.bindTexture(gl.TEXTURE_2D, null);
+/*
+      gl.useProgram(prog2);
+      //  Set projection and modelview matrixes
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog2,"ProjectionMatrix") , false , ProjectionMatrix.getMat());
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog2,"ModelviewMatrix")  , false , ModelviewMatrix.getMat());
+
+      gl.bindBuffer(gl.ARRAY_BUFFER,points);
+      var coords = gl.getAttribLocation(prog2, "coordinates");
+      gl.enableVertexAttribArray(coords);
+      gl.vertexAttribPointer(coords,3,gl.FLOAT,false,0,0);
+
+      gl.drawArrays(gl.POINTS, 0, m);
+      gl.disableVertexAttribArray(coords);
+*/
+
+//==========================PROG3==============================\\
+
+      gl.bindTexture(gl.TEXTURE_2D, tex2);
+
+      gl.useProgram(prog3);
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog3,"ProjectionMatrix"), false, ProjectionMatrix.getMat());
+      gl.uniformMatrix4fv(gl.getUniformLocation(prog3,"ModelviewMatrix"), false, ModelviewMatrix.getMat());
+
+      gl.bindBuffer(gl.ARRAY_BUFFER,ablate);
+
+      coords = gl.getAttribLocation(prog3, "coordinates");
+      T2D = gl.getAttribLocation(prog3, "T2D");
+      var particle_positions = gl.getAttribLocation(prog3, 'position');
+
+      gl.enableVertexAttribArray(coords);
+      gl.enableVertexAttribArray(T2D);
+      gl.vertexAttribPointer(coords,3,gl.FLOAT,false,20,0);
+      gl.vertexAttribPointer(T2D, 2, gl.FLOAT, false,20,12);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER,ablatepos);
+      gl.enableVertexAttribArray(particle_positions);
+      gl.vertexAttribPointer(particle_positions, 3, gl.FLOAT, false, 0, 0);
+      ext.vertexAttribDivisorANGLE(particle_positions, 1);
+      ext.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 30, num_ablate_particles);
+      ext.vertexAttribDivisorANGLE(particle_positions, 0);
+
+      gl.disableVertexAttribArray(coords);
+      gl.disableVertexAttribArray(T2D);
+
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      //  Flush
+      gl.flush ();
+   }
+
+   //
+   //  Resize canvas
+   //
+   canvas.resize = function ()
+   {
+      canvas.width  = 752;
+      canvas.height = 500;
+      gl.viewport(0,0,752,500);
+      Display();
+   }
+
+   //
+   //  Mouse button pressed
+   //
+   canvas.onmousedown = function (ev)
+   {
+      move  = 1;
+      x0 = ev.clientX;
+      y0 = ev.clientY;
+   }
+
+   //
+   //  Mouse button released
+   //
+   canvas.onmouseup = function (ev)
+   {
+      move  = 0;
+   }
+
+   //
+   //  Mouse movement
+   //
+   canvas.onmousemove = function (ev)
+   {
+      if (move==0) return;
+      //  Update angles
+      ph -= ev.clientX-x0;
+      th += ev.clientY-y0;
+      //  Store location
+      x0 = ev.clientX;
+      y0 = ev.clientY;
+      //  Redisplay
+      Display();
+   }
+
+		function renderLoop(timeStamp) {
+			current_time = timeStamp / 1000; // % 4
+			//if (current_time > 3.95) original_pos = generate_coordinates();
+			regenerate_coordinates();
+			Display();
+			window.requestAnimationFrame(renderLoop);
+		}
+		window.requestAnimationFrame(renderLoop);
+}
+</script> 
+
+<!--
+  Web page
+  -->
+</head>
+<body onload="webGLStart();" onresize="canvas.resize();"> 
+<H1>Renken: HW9: WebGL with Instancing</H1>
+<canvas id="canvas" width="752" height="500" style="background: url('space.jpg')"></canvas> 
+</body>
+</html>
