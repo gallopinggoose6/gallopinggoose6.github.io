@@ -1,9 +1,10 @@
 <html>
 <head>
-<title>LEONIDS!!!</title>
+<title>LEONIDS</title>
 <!--
-  Homework 5, code adapted from
-  Willem A. (Vlakkies) Schreuder
+  Adapted from Tyler Renken's
+  Homework 9, which also contains code adapted from
+  Willem A. (Vlakkies) Schreuder, professor at CU
   CSCI 4239/5239 Spring 2025
   -->
 
@@ -477,7 +478,8 @@ function webGLStart()
    //  Mouse control variables
    var x0 = y0 = move  = 0;
    //  Rotation angles
-   var th = ph = 15;
+   var th = 0;
+   var ph = -40;
 
    //  Create and load sail texture
    var tex = gl.createTexture();
@@ -629,6 +631,13 @@ function webGLStart()
       x0 = ev.clientX;
       y0 = ev.clientY;
    }
+   // Mobile Support
+   canvas.ontouchstart = function (ev)
+   {
+      move = 1;
+      x0 = ev.clientX;
+      y0 = ev.clientY;
+   }
 
    //
    //  Mouse button released
@@ -637,11 +646,27 @@ function webGLStart()
    {
       move  = 0;
    }
+   canvas.ontouchend = function (ev)
+   {
+      move  = 0;
+   }
 
    //
    //  Mouse movement
    //
    canvas.onmousemove = function (ev)
+   {
+      if (move==0) return;
+      //  Update angles
+      ph -= ev.clientX-x0;
+      th += ev.clientY-y0;
+      //  Store location
+      x0 = ev.clientX;
+      y0 = ev.clientY;
+      //  Redisplay
+      Display();
+   }
+   canvas.ontouchmove = function (ev)
    {
       if (move==0) return;
       //  Update angles
@@ -669,8 +694,14 @@ function webGLStart()
   Web page
   -->
 </head>
-<body onload="webGLStart();" onresize="canvas.resize();"> 
-<H1>Renken: HW9: WebGL with Instancing</H1>
-<canvas id="canvas" width="752" height="500" style="background: url('space.jpg')"></canvas> 
+<body onload="webGLStart();" onresize="canvas.resize();">
+	<div>
+		<center><H1>LEONIDS</H1></center>
+	</div>
+	<div style="margin: auto; background-color: hotpink">
+		<canvas id="canvas" width="752" height="500" style="background: url('space.jpg'); position: absolute; left: 0px; right: 0px; margin: auto;">
+			Canvas is not supported in your browser.
+		</canvas> 
+	</div>
 </body>
 </html>
